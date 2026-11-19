@@ -789,6 +789,13 @@ const round2 = n => Math.round(n*100)/100;
      price … 1ロットの価格（1単位あたりではない）
    実量（g など）は「2袋＝2,000g」の表示と、シート・使用履歴に残すときだけ使う。 */
 const lotSize = it => { const v = Number(it.lot); return v > 0 ? v : 1; };
+/* 仕入れ単位（buy）：数える単位のいくつで1回分の仕入れになるか。例：海苔はパックで数え、1箱＝100パックで仕入れる。
+   1以下・未設定なら、数える単位のまま発注する（今までどおり）。 */
+const buySize = it => { const v = Number(it && it.buy); return v > 1 ? v : 1; };
+function buyName(it){
+  const u = LOT_UNITS.find(x => x.k === (it && it.buyUnit)) || LOT_UNITS.find(x => x.k === 'box');
+  return state.lang === 'ja' ? u.ja : (state.lang === 'th' ? u.th : u.th + '/' + u.ja);
+}
 /* ロット数 → 実量（g など） */
 const toUnits = (it, lots) => round2(Number(lots || 0) * lotSize(it));
 /* 発注ロット数。未カウントなら null、足りていれば 0 */
@@ -797,7 +804,9 @@ function orderLots(item){
   if(c === null) return null;
   const short = round2(Number(item.par) - c);
   if(short <= 0) return 0;
-  return Math.ceil(short - 1e-9);          /* 半端は1ロットに切り上げ */
+  const n = Math.ceil(short - 1e-9);       /* 半端は1ロットに切り上げ */
+  const b = buySize(item);
+  return b > 1 ? Math.ceil(n / b - 1e-9) * b : n;   /* 仕入れ単位があれば、その倍数に切り上げ */
 }
 /* 発注量を実量（g など）で。シートに残すときだけ使う */
 function orderQty(item){
@@ -823,13 +832,16 @@ const lotNameJa = it => {
 function lotsText(it, lots){
   const total = toUnits(it, lots);
   /* 1ロット＝1単位（個・枚など）のときは実量を出さない（同じ数字になるため） */
-  return {head: fmt(lots) + ' ' + lotName(it),
-          sub: lotSize(it) === 1 ? '' : fmt(total) + ' ' + esc(it.unit)};
+  const b = buySize(it);
+  const parts = [];
+  if(lotSize(it) !== 1) parts.push(fmt(total) + ' ' + esc(it.unit));
+  if(b > 1) parts.push('＝' + fmt(round2(Number(lots || 0) / b)) + ' ' + buyName(it));
+  return {head: fmt(lots) + ' ' + lotName(it), sub: parts.join('・')};
 }
 /* 1行で「2 袋（2,000 g）」。1ロット＝1単位なら「2 袋」だけ */
 function lotsLabel(it, lots){
   const t = lotsText(it, lots);
-  return lotSize(it) === 1 ? t.head : `${t.head}（${t.sub}）`;
+  return t.sub ? `${t.head}（${t.sub}）` : t.head;
 }
 /* 品目マスタの基準在庫欄に添える「＝ 2,000 g」 */
 const parEqText = it => lotSize(it) === 1 ? '' : `＝ ${fmt(toUnits(it, it.par))} ${esc(it.unit)}`;
